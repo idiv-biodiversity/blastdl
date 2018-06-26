@@ -12,6 +12,7 @@ function usage {
 }
 
 # parse command line arguments (and make sure that they are set and useful)
+echo $1 $2 $3
 REMOTE_DIR=$1
 [[ -n $REMOTE_DIR ]] || {
   usage >&2
@@ -26,11 +27,13 @@ DB_NAME=$2
 
 LOCAL_DIR=$3
 [[ -d $LOCAL_DIR ]] || {
+  echo "no such file or directory "$LOCAL_DIR >&2
   usage >&2
   exit 1
 }
 
-mkdir -f $LOCAL_DIR/$DB_NAME
+
+mkdir -p $LOCAL_DIR/$DB_NAME
 # create temp directory within the LOCAL_DIR and make sure its deleted on exit
 TMP_DIR=$(mktemp -d --tmpdir=$LOCAL_DIR/$DBNAME .blastdl-XXXXXXXXXX)
 trap 'rm -rf $TMP_DIR' EXIT INT TERM
@@ -79,7 +82,7 @@ for i in $DB_NAME.* ; do
 done &&
 rm -rf $LOCAL_DIR/$DB_NAME/latest
 ln -s $LOCAL_DIR/$DB_NAME/$DATE/ $LOCAL_DIR/$DB_NAME/latest
-log.info "... moving done, setting read only ..." &&
-chmod -R 444 $LOCAL_DIR/$DB_NAME/$DATE/ &&
-log.info "... set read only, done." &&
+# log.info "... moving done, setting read only ..." &&
+# chmod -R 444 $LOCAL_DIR/$DB_NAME/$DATE/ &&
+# log.info "... set read only, done." &&
 popd &> /dev/null
