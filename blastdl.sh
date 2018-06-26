@@ -8,7 +8,7 @@ umask 0022
 
 function usage {
   echo "usage: bash $0 rdir dbname ldir"
-  echo "- will download rdir/dbname*.tar.gz from the NCBI ftp to ldir/YYYY-MM-DD"
+  echo "- will download rdir/dbname*.tar.gz from the NCBI ftp to ldir/dbname/YYYY-MM-DD"
 }
 
 # parse command line arguments (and make sure that they are set and useful)
@@ -30,8 +30,9 @@ LOCAL_DIR=$3
   exit 1
 }
 
+mkdir -f $LOCAL_DIR/$DB_NAME
 # create temp directory within the LOCAL_DIR and make sure its deleted on exit
-TMP_DIR=$(mktemp -d --tmpdir=$LOCAL_DIR .blastdl-XXXXXXXXXX)
+TMP_DIR=$(mktemp -d --tmpdir=$LOCAL_DIR/$DBNAME .blastdl-XXXXXXXXXX)
 trap 'rm -rf $TMP_DIR' EXIT INT TERM
 
 DATE=$(date +%F)
@@ -74,10 +75,10 @@ for i in $DB_NAME*.tar.gz ; do
 done &&
 log.info "... extracting finished, tagging with date and moving ..." &&
 for i in $DB_NAME.* ; do
-  mv -n $i $LOCAL_DIR/$DATE/ || exit 1
+  mv -n $i $LOCAL_DIR/$DB_NAME/$DATE/ || exit 1
 done &&
-rm -rf $LOCAL_DIR/latest
-ln -s $LOCAL_DIR/$DATE/ $LOCAL_DIR/latest
+rm -rf $LOCAL_DIR/$DB_NAME/latest
+ln -s $LOCAL_DIR/$DB_NAME/$DATE/ $LOCAL_DIR/$DB_NAME/latest
 log.info "... moving done, setting read only ..." &&
 chmod -R 444 $LOCAL_DIR/$DB_NAME/$DATE/ &&
 log.info "... set read only, done." &&
