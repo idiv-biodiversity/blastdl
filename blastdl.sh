@@ -7,25 +7,34 @@
 umask 0022
 
 function usage {
-  echo "usage: bash $0 dbname dir"
+  echo "usage: bash $0 rdir dbname ldir"
+  echo "- will download rdir/dbname*.tar.gz from the NCBI ftp to ldir/YYYY-MM-DD"
 }
 
-BLAST_DB_DATASET=$1
-[[ -n $BLAST_DB_DATASET ]] || {
+# parse command line arguments (and make sure that they are set and useful)
+REMOTE_DIR=$1
+[[ -n $REMOTE_DIR ]] || {
   usage >&2
   exit 1
 }
 
-BLAST_DB_DIR=$2
-[[ -d $BLAST_DB_DIR ]] || {
+DB_NAME=$2
+[[ -n $DB_NAME ]] || {
   usage >&2
   exit 1
 }
 
-BLAST_DB_DL_DIR=$(mktemp -d --tmpdir=$BLAST_DB_DIR .blastdl-XXXXXXXXXX)
-trap 'rm -rf $BLAST_DB_DL_DIR' EXIT INT TERM
+LOCAL_DIR=$3
+[[ -d $LOCAL_DIR ]] || {
+  usage >&2
+  exit 1
+}
 
-BLAST_DB_DATE=$(date +%F)
+# create temp directory within the LOCAL_DIR and make sure its deleted on exit
+TMP_DIR=$(mktemp -d --tmpdir=$LOCAL_DIR .blastdl-XXXXXXXXXX)
+trap 'rm -rf $TMP_DIR' EXIT INT TERM
+
+DATE=$(date +%F)
 
 # ------------------------------------------------------------------------------
 # application functions
@@ -41,52 +50,35 @@ function log.err {
 
 function blastdl.download {
   # download all md5s first, then download all tarballs
+  # using lftp's mirror (non-recursive, dont set permissions, parallel with include pattern)
   cat << EOF | lftp ftp://ftp.ncbi.nlm.nih.gov
 set net:socket-buffer 33554432
-mirror -r -p -P 8 -i "^$BLAST_DB_DATASET\.[0-9]+\.tar\.gz\.md5$" /blast/db $BLAST_DB_DL_DIR
-mirror -r -p -P 8 -i "^$BLAST_DB_DATASET\.[0-9]+\.tar\.gz$"      /blast/db $BLAST_DB_DL_DIR
+mirror -r -p -P 8 -i "^$DB_NAME.*\.tar\.gz\.md5$" $REMOTE_DIR $TMP_DIR
+mirror -r -p -P 8 -i "^$DB_NAME.*\.tar\.gz$"      $REMOTE_DIR $TMP_DIR
 EOF
-}
-
-function blastdl.update.metadata {
-  case $BLAST_DB_DATASET in
-    nr|refseq_protein)
-      BLAST_DB_METADATA_FILE=$BLAST_DB_DATASET.pal
-      ;;
-
-    nt|refseq_genomic)
-      BLAST_DB_METADATA_FILE=$BLAST_DB_DATASET.nal
-      ;;
-    *)
-      log.err "unknown database $BLAST_DB_DATASET"
-      return 1
-      ;;
-  esac
-
-  sed -e "s/$BLAST_DB_DATASET/$BLAST_DB_DATASET-$BLAST_DB_DATE/g" \
-      -i $BLAST_DB_METADATA_FILE
 }
 
 # ------------------------------------------------------------------------------
 # application
 # ------------------------------------------------------------------------------
 
-log.info "starting download of $BLAST_DB_DATASET database ..." &&
+log.info "starting download of $DB_NAME database ..." &&
 blastdl.download &&
 log.info "... download finished, checking md5 ..." &&
-pushd $BLAST_DB_DL_DIR &> /dev/null &&
+pushd $TMP_DIR &> /dev/null &&
 md5sum --check --quiet *.md5 &&
 log.info "... md5 success, extracting ..." &&
-for i in $BLAST_DB_DATASET.*.tar.gz ; do
+for i in $DB_NAME*.tar.gz ; do
   tar xzfo $i || exit 1
   rm -f $i $i.md5
 done &&
 log.info "... extracting finished, tagging with date and moving ..." &&
-blastdl.update.metadata &&
-for i in $BLAST_DB_DATASET.* ; do
-  mv -n $i $BLAST_DB_DIR/${i/$BLAST_DB_DATASET/$BLAST_DB_DATASET-$BLAST_DB_DATE} || exit 1
+for i in $DB_NAME.* ; do
+  mv -n $i $LOCAL_DIR/$DATE/ || exit 1
 done &&
+rm -rf $LOCAL_DIR/latest
+ln -s $LOCAL_DIR/$DATE/ $LOCAL_DIR/latest
 log.info "... moving done, setting read only ..." &&
-chmod 444 $BLAST_DB_DIR/$BLAST_DB_DATASET-$BLAST_DB_DATE* &&
+chmod -R 444 $LOCAL_DIR/$DB_NAME/$DATE/ &&
 log.info "... set read only, done." &&
 popd &> /dev/null
