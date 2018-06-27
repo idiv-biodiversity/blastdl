@@ -12,7 +12,6 @@ function usage {
 }
 
 # parse command line arguments (and make sure that they are set and useful)
-echo $1 $2 $3
 REMOTE_DIR=$1
 [[ -n $REMOTE_DIR ]] || {
   usage >&2
@@ -33,7 +32,11 @@ LOCAL_DIR=$3
 }
 
 
-mkdir -p $LOCAL_DIR/$DB_NAME
+mkdir -p $LOCAL_DIR/$DB_NAME &&
+
+# create data dir (and make sure its deleted if anything fails)
+mkdir $LOCAL_DIR/$DB_NAME/$DATE/ &&
+trap 'rmdir $LOCAL_DIR/$DB_NAME/$DATE/' EXIT INT TERM
 # create temp directory within the LOCAL_DIR and make sure its deleted on exit
 TMP_DIR=$(mktemp -d --tmpdir=$LOCAL_DIR/$DBNAME .blastdl-XXXXXXXXXX)
 trap 'rm -rf $TMP_DIR' EXIT INT TERM
@@ -76,13 +79,15 @@ for i in $DB_NAME*.tar.gz ; do
   tar xzfo $i || exit 1
   rm -f $i $i.md5
 done &&
-log.info "... extracting finished, tagging with date and moving ..." &&
-for i in $DB_NAME.* ; do
+log.info "... extracting finished, moving ..." &&
+ls -la &&
+for i in * ; do
   mv -n $i $LOCAL_DIR/$DB_NAME/$DATE/ || exit 1
 done &&
 rm -rf $LOCAL_DIR/$DB_NAME/latest
 ln -s $LOCAL_DIR/$DB_NAME/$DATE/ $LOCAL_DIR/$DB_NAME/latest
-# log.info "... moving done, setting read only ..." &&
-# chmod -R 444 $LOCAL_DIR/$DB_NAME/$DATE/ &&
-# log.info "... set read only, done." &&
+log.info "... moving done, setting read only ..." &&
+chmod 555 $LOCAL_DIR/$DB_NAME/$DATE/ &&
+chmod 444 $LOCAL_DIR/$DB_NAME/$DATE/* &&
+log.info "... set read only, done." &&
 popd &> /dev/null
