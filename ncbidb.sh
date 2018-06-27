@@ -80,7 +80,6 @@ for i in $DB_NAME*.tar.gz ; do
   rm -f $i $i.md5
 done &&
 log.info "... extracting finished, moving ..." &&
-ls -la &&
 for i in * ; do
   mv -n $i $LOCAL_DIR/$DB_NAME/$DATE/ || exit 1
 done &&
