@@ -7,8 +7,9 @@
 umask 0022
 
 function usage {
-  echo "usage: bash $0 rdir dbname ldir"
-  echo "- will download rdir/dbname*.tar.gz from the NCBI ftp to ldir/dbname/YYYY-MM-DD"
+  echo "usage: bash $0 rdir pattern ldir"
+  echo "- will download rdir/pattern.*.tar.gz from the NCBI ftp to ldir/YYYY-MM-DD"
+  echo '- example call ./ncbidl.sh blast/db/ 16S /data/db/blastdb/'
 }
 
 # parse command line arguments (and make sure that they are set and useful)
@@ -18,8 +19,8 @@ REMOTE_DIR=$1
   exit 1
 }
 
-DB_NAME=$2
-[[ -n $DB_NAME ]] || {
+PATTERN=$2
+[[ -n $PATTERN ]] || {
   usage >&2
   exit 1
 }
@@ -31,37 +32,37 @@ LOCAL_DIR=$3
   exit 1
 }
 
-
-mkdir -p $LOCAL_DIR/$DB_NAME &&
+DATE=$(date +%F)
 
 # create data dir (and make sure its deleted if anything fails)
-mkdir $LOCAL_DIR/$DB_NAME/$DATE/ &&
-trap 'rmdir $LOCAL_DIR/$DB_NAME/$DATE/' EXIT INT TERM
+mkdir -p $LOCAL_DIR/$DATE/ &&
+trap 'rm -rf $LOCAL_DIR/$DATE/' INT TERM
 # create temp directory within the LOCAL_DIR and make sure its deleted on exit
-TMP_DIR=$(mktemp -d --tmpdir=$LOCAL_DIR/$DBNAME .blastdl-XXXXXXXXXX)
+TMP_DIR=$(mktemp -d --tmpdir=$LOCAL_DIR/ .ncbidl-XXXXXXXXXX)
 trap 'rm -rf $TMP_DIR' EXIT INT TERM
 
-DATE=$(date +%F)
 
 # ------------------------------------------------------------------------------
 # application functions
 # ------------------------------------------------------------------------------
 
 function log.info {
-  logger -p user.info -t blastdl "$@"
+  logger -p user.info -t ncbidl "$@"
+  >&2 echo "$@"
 }
 
 function log.err {
-  logger -p user.err -t blastdl "$@"
+  logger -p user.err -t ncbidl "$@"
+  >&2 echo "$@"
 }
 
-function blastdl.download {
+function ncbidl.download {
   # download all md5s first, then download all tarballs
   # using lftp's mirror (non-recursive, dont set permissions, parallel with include pattern)
   cat << EOF | lftp ftp://ftp.ncbi.nlm.nih.gov
 set net:socket-buffer 33554432
-mirror -r -p -P 8 -i "^$DB_NAME.*\.tar\.gz\.md5$" $REMOTE_DIR $TMP_DIR
-mirror -r -p -P 8 -i "^$DB_NAME.*\.tar\.gz$"      $REMOTE_DIR $TMP_DIR
+mirror -r -p -P 8 -i "^$PATTERN.*(\.tar)?\.gz\.md5$" $REMOTE_DIR $TMP_DIR
+mirror -r -p -P 8 -i "^$PATTERN.*(\.tar)?\.gz$"      $REMOTE_DIR $TMP_DIR
 EOF
 }
 
@@ -69,24 +70,30 @@ EOF
 # application
 # ------------------------------------------------------------------------------
 
-log.info "starting download of $DB_NAME database ..." &&
-blastdl.download &&
+log.info "starting download of $PATTERN database ..." &&
+ncbidl.download &&
 log.info "... download finished, checking md5 ..." &&
 pushd $TMP_DIR &> /dev/null &&
 md5sum --check --quiet *.md5 &&
 log.info "... md5 success, extracting ..." &&
-for i in $DB_NAME*.tar.gz ; do
-  tar xzfo $i || exit 1
-  rm -f $i $i.md5
+for i in $PATTERN*.gz ; do
+  ( 
+  if [[ $i =~ \.tar.gz$ ]]; then
+    tar xzfo $i
+  else
+    gunzip -k $i
+  fi 
+  rm -f $i $i.md5 
+  ) || exit 1
 done &&
-log.info "... extracting finished, moving ..." &&
-for i in * ; do
-  mv -n $i $LOCAL_DIR/$DB_NAME/$DATE/ || exit 1
-done &&
-rm -rf $LOCAL_DIR/$DB_NAME/latest
-ln -s $LOCAL_DIR/$DB_NAME/$DATE/ $LOCAL_DIR/$DB_NAME/latest
-log.info "... moving done, setting read only ..." &&
-chmod 555 $LOCAL_DIR/$DB_NAME/$DATE/ &&
-chmod 444 $LOCAL_DIR/$DB_NAME/$DATE/* &&
-log.info "... set read only, done." &&
 popd &> /dev/null
+log.info "... extracting finished, moving ..." &&
+for i in $TMP_DIR/* ; do
+  mv -n $i $LOCAL_DIR/$DATE/ || exit 1
+done &&
+rm -rf $LOCAL_DIR/latest
+ln -s $DATE/ $LOCAL_DIR/latest
+log.info "... moving done, setting read only ..." &&
+# chmod 555 $LOCAL_DIR/$DATE/ &&
+# chmod 444 $LOCAL_DIR/$DATE/* &&
+log.info "... set read only, done." 
